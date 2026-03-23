@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/laoin114514/ease-crawler/logger"
 )
 
 // ContextLoggerKey 是框架约定的日志器注入键。
@@ -35,7 +37,7 @@ type Meta struct {
 	StartImmediately bool
 	// Logger 允许插件自带日志器（可覆盖框架自动分配的 logger）。
 	// 一般情况下不必设置，框架会按分组自动注入。
-	Logger *EaseLogger
+	Logger *logger.EaseLogger
 }
 
 // Context 是插件运行时上下文容器。
@@ -80,10 +82,10 @@ func GetAs[T any](c *Context, key string) (T, bool) {
 	return val, true
 }
 
-func GetCrawlerLogger(c *Context) *EaseLogger {
-	logger, ok := GetAs[*EaseLogger](c, ContextLoggerKey)
+func GetCrawlerLogger(c *Context) *logger.EaseLogger {
+	loggerInstance, ok := GetAs[*logger.EaseLogger](c, ContextLoggerKey)
 	if !ok {
-		return NewLogger(os.Stdout, LoggerPrefix, log.LstdFlags)
+		return logger.NewLogger(os.Stdout, LoggerPrefix, log.LstdFlags, "INFO")
 	}
-	return logger
+	return loggerInstance
 }

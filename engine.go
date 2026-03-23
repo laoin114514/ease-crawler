@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/laoin114514/ease-crawler/logger"
 )
 
 // Engine 是框架核心调度器。
@@ -28,7 +30,7 @@ type Engine struct {
 	// 全局读写锁：保护分组树、注册表、日志文件映射等共享状态。
 	mu sync.RWMutex
 	// 全局兜底日志器。
-	engineLogger *EaseLogger
+	engineLogger *logger.EaseLogger
 	// 日志根目录，默认 "logs"。
 	logRootDir string
 	// 全局插件注册表：key = groupPath/name。
@@ -44,7 +46,7 @@ type registeredCrawler struct {
 	path    string
 	name    string
 	crawler Crawler
-	log     *EaseLogger
+	log     *logger.EaseLogger
 	ctx     *context.Context
 	cancel  context.CancelFunc
 }
@@ -63,6 +65,8 @@ type CrawlerGroup struct {
 	parent   *CrawlerGroup
 }
 
+var EngineInstance = New()
+
 // New 创建引擎实例，并初始化根分组。
 func New() *Engine {
 	e := &Engine{
@@ -73,7 +77,7 @@ func New() *Engine {
 		},
 		mu:           sync.RWMutex{},
 		ctx:          new(Context),
-		engineLogger: NewLogger(os.Stdout, "", log.LstdFlags),
+		engineLogger: logger.NewLogger(os.Stdout, "", log.LstdFlags, "INFO"),
 		logRootDir:   "logs",
 		crawlers:     make(map[string]*registeredCrawler),
 		logFiles:     make(map[string]*os.File),
@@ -123,7 +127,7 @@ func (e *Engine) DevRun(key string) {
 		e.engineLogger.Errorf("插件不存在: %s", key)
 		return
 	}
-	logger := Logger
+	logger := logger.Logger
 	cctx := &Context{}
 	cctx.Set(ContextLoggerKey, logger)
 	crawler.crawler.Run(cctx)
@@ -145,10 +149,10 @@ func (g *CrawlerGroup) RunWithContext(ctx context.Context) {
 	}
 	g.engine.mu.RUnlock()
 
-	g.engine.engineLogger.Printf("crawler引擎启动, 插件总数=%d", len(items))
+	g.engine.engineLogger.Infof("crawler引擎启动, 插件总数=%d", len(items))
 	for _, item := range items {
 		meta := item.crawler.Meta()
-		g.engine.engineLogger.Printf("插件发现: 名称=%s, 元信息={间隔=%s,启动即跑=%t,自定义日志=%t}", item.name, meta.Interval, meta.StartImmediately, meta.Logger != nil)
+		g.engine.engineLogger.Infof("插件发现: 名称=%s, 元信息={间隔=%s,启动即跑=%t,自定义日志=%t}", item.name, meta.Interval, meta.StartImmediately, meta.Logger != nil)
 	}
 
 	var wg sync.WaitGroup
@@ -252,7 +256,7 @@ func (g *CrawlerGroup) Register(crawler Crawler) {
 		return
 	}
 
-	logger := NewLogger(f, "", log.LstdFlags)
+	logger := logger.NewLogger(f, "", log.LstdFlags, "INFO")
 	g.engine.crawlers[key] = &registeredCrawler{
 		path:    groupPath,
 		name:    name,
@@ -365,5 +369,5 @@ func sanitizeFileName(name string) string {
 // logf 输出框架级日志（写到全局 logger）。
 // 格式：[groupPath][crawlerName] message
 func (e *Engine) logf(path, name, format string, args ...any) {
-	e.engineLogger.Printf("[%s][%s] %s", cleanGroupPath(path), name, fmt.Sprintf(format, args...))
+	e.engineLogger.Infof("[%s][%s] %s", cleanGroupPath(path), name, fmt.Sprintf(format, args...))
 }
