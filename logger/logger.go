@@ -9,34 +9,61 @@ import (
 	"sync"
 )
 
-var levelMap = map[string]int{
-	"FATAL": 1,
-	"ERROR": 2,
-	"WARN":  3,
-	"INFO":  4,
-	"DEBUG": 5,
+// Level 日志级别，数值越大表示级别越高（更重要）
+type Level int
+
+const (
+	DebugLevel Level = iota + 1
+	InfoLevel
+	WarnLevel
+	ErrorLevel
+	FatalLevel
+)
+
+var levelToString = map[Level]string{
+	DebugLevel: "DEBUG",
+	InfoLevel:  "INFO",
+	WarnLevel:  "WARN",
+	ErrorLevel: "ERROR",
+	FatalLevel: "FATAL",
+}
+
+var stringToLevel = map[string]Level{
+	"DEBUG": DebugLevel,
+	"INFO":  InfoLevel,
+	"WARN":  WarnLevel,
+	"ERROR": ErrorLevel,
+	"FATAL": FatalLevel,
+}
+
+func parseLevel(level string) (Level, bool) {
+	if lv, ok := stringToLevel[strings.ToUpper(strings.TrimSpace(level))]; ok {
+		return lv, true
+	}
+	return InfoLevel, false
 }
 
 type EaseLogger struct {
 	logWriter *log.Logger
 	mu        sync.Mutex // 互斥锁保证并发写安全
-	out       io.Writer
-	level     int
+	level     Level
+	exitFunc  func(code int)
 }
 
 // NewLogger 创建日志实例
 // out: 日志输出目标（如 os.Stdout、文件句柄等）
 // prefix: 日志全局前缀（如 [easecrawler]）
 // flags: 日志标志（如 log.LstdFlags 包含时间戳）
+// level: 日志级别（DEBUG/INFO/WARN/ERROR/FATAL），无效值默认 INFO
 func NewLogger(out io.Writer, prefix string, flags int, level string) *EaseLogger {
 	if out == nil {
 		out = os.Stdout // 兜底，避免 nil writer
 	}
+	lv, _ := parseLevel(level)
 	return &EaseLogger{
 		logWriter: log.New(out, prefix, flags),
-		mu:        sync.Mutex{},
-		out:       out,
-		level:     levelMap[level],
+		level:     lv,
+		exitFunc:  os.Exit,
 	}
 }
 
@@ -46,105 +73,131 @@ func InitLogger(out io.Writer, prefix string, flags int, level string) {
 }
 
 func (l *EaseLogger) SetPrefix(prefix string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.logWriter.SetPrefix(prefix)
 }
 
 func (l *EaseLogger) GetPrefix() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.logWriter.Prefix()
 }
 
-func (l *EaseLogger) SetLevelOfOutput(level string) {
-	l.level = levelMap[level]
+// SetLevelOfOutput 设置日志输出级别，返回是否设置成功。
+// level 无效时不会变更当前级别，并返回 false。
+func (l *EaseLogger) SetLevelOfOutput(level string) bool {
+	lv, ok := parseLevel(level)
+	if !ok {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.level = lv
+	return true
+}
+
+// GetLevel 返回当前日志级别字符串。
+func (l *EaseLogger) GetLevel() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if name, ok := levelToString[l.level]; ok {
+		return name
+	}
+	return "INFO"
+}
+
+func (l *EaseLogger) shouldLog(level Level) bool {
+	return level >= l.level
 }
 
 // 通用日志方法，提取重复逻辑
-func (l *EaseLogger) log(level string, format string, v ...any) {
+func (l *EaseLogger) log(level Level, format string, v ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.level > levelMap[level] {
+	if !l.shouldLog(level) {
 		return
 	}
-	fullFormat := fmt.Sprintf("[%s] %s", level, format)
+	fullFormat := fmt.Sprintf("[%s] %s", levelToString[level], format)
 	l.logWriter.Printf(fullFormat, v...)
+}
+
+func (l *EaseLogger) logln(level Level, v ...any) {
+	msg := strings.TrimSuffix(fmt.Sprintln(v...), "\n")
+	l.log(level, "%s", msg)
+}
+
+func (l *EaseLogger) logplain(level Level, v ...any) {
+	msg := fmt.Sprint(v...)
+	l.log(level, "%s", msg)
 }
 
 // ========== INFO 级别日志 ==========
 func (l *EaseLogger) Infof(format string, v ...any) {
-	l.log("INFO", format, v...)
+	l.log(InfoLevel, format, v...)
 }
 
 func (l *EaseLogger) Infoln(v ...any) {
-	// 动态生成格式化字符串，贴合标准库 ln 方法的空格分隔行为
-	format := strings.Repeat("%v ", len(v))
-	format = strings.TrimSuffix(format, " ")
-	l.log("INFO", format, v...)
+	l.logln(InfoLevel, v...)
 }
 
 func (l *EaseLogger) Info(v ...any) {
-	l.log("INFO", "%v", v...)
+	l.logplain(InfoLevel, v...)
 }
 
 // ========== ERROR 级别日志 ==========
 func (l *EaseLogger) Errorf(format string, v ...any) {
-	l.log("ERROR", format, v...)
+	l.log(ErrorLevel, format, v...)
 }
 
 func (l *EaseLogger) Errorln(v ...any) {
-	format := strings.Repeat("%v ", len(v))
-	format = strings.TrimSuffix(format, " ")
-	l.log("ERROR", format, v...)
+	l.logln(ErrorLevel, v...)
 }
 
 func (l *EaseLogger) Error(v ...any) {
-	l.log("ERROR", "%v", v...)
+	l.logplain(ErrorLevel, v...)
 }
 
 // ========== WARN 级别日志 ==========
 func (l *EaseLogger) Warnf(format string, v ...any) {
-	l.log("WARN", format, v...)
+	l.log(WarnLevel, format, v...)
 }
 
 func (l *EaseLogger) Warnln(v ...any) {
-	format := strings.Repeat("%v ", len(v))
-	format = strings.TrimSuffix(format, " ")
-	l.log("WARN", format, v...)
+	l.logln(WarnLevel, v...)
 }
 
 func (l *EaseLogger) Warn(v ...any) {
-	l.log("WARN", "%v", v...)
+	l.logplain(WarnLevel, v...)
 }
 
 // ========== FATAL 级别日志 ==========
 func (l *EaseLogger) Fatalf(format string, v ...any) {
-	l.log("FATAL", format, v...)
-	os.Exit(1) // 符合标准库 Fatal 行为：打印后退出
+	l.log(FatalLevel, format, v...)
+	l.exitFunc(1) // 符合标准库 Fatal 行为：打印后退出
 }
 
 func (l *EaseLogger) Fatalln(v ...any) {
-	format := strings.Repeat("%v ", len(v))
-	format = strings.TrimSuffix(format, " ")
-	l.log("FATAL", format, v...)
-	os.Exit(1)
+	l.logln(FatalLevel, v...)
+	l.exitFunc(1)
 }
 
 func (l *EaseLogger) Fatal(v ...any) {
-	l.log("FATAL", "%v", v...)
-	os.Exit(1)
+	l.logplain(FatalLevel, v...)
+	l.exitFunc(1)
 }
 
 // ========== DEBUG 级别日志 ==========
 func (l *EaseLogger) Debugf(format string, v ...any) {
-	l.log("DEBUG", format, v...)
+	l.log(DebugLevel, format, v...)
 }
 
 func (l *EaseLogger) Debugln(v ...any) {
-	format := strings.Repeat("%v ", len(v))
-	format = strings.TrimSuffix(format, " ")
-	l.log("DEBUG", format, v...)
+	l.logln(DebugLevel, v...)
 }
 
 func (l *EaseLogger) Debug(v ...any) {
-	l.log("DEBUG", "%v", v...)
+	l.logplain(DebugLevel, v...)
 }
 
 // 全局日志实例，默认输出到标准输出，前缀 [ease]，包含标准日志标志
