@@ -55,9 +55,20 @@ type EaseLogger struct {
 // prefix: 日志全局前缀（如 [easecrawler]）
 // flags: 日志标志（如 log.LstdFlags 包含时间戳）
 // level: 日志级别（DEBUG/INFO/WARN/ERROR/FATAL），无效值默认 INFO
-func NewLogger(out io.Writer, prefix string, flags int, level string) *EaseLogger {
+func NewLogger(out io.Writer, prefix string, flags int) *EaseLogger {
 	if out == nil {
 		out = os.Stdout // 兜底，避免 nil writer
+	}
+	return &EaseLogger{
+		logWriter: log.New(out, prefix, flags),
+		level:     InfoLevel,
+		exitFunc:  os.Exit,
+	}
+}
+
+func NewLoggerWithLevel(out io.Writer, prefix string, flags int, level string) *EaseLogger {
+	if out == nil {
+		out = os.Stdout
 	}
 	lv, _ := parseLevel(level)
 	return &EaseLogger{
@@ -67,9 +78,26 @@ func NewLogger(out io.Writer, prefix string, flags int, level string) *EaseLogge
 	}
 }
 
+// NewLoggerMultiWriter 使用多个 writer 输出日志，默认配置与全局 Logger 一致。
+// writers 为空或全为 nil 时，会回退到 os.Stdout。
+func NewLoggerMultiWriter(writers ...io.Writer) *EaseLogger {
+	validWriters := make([]io.Writer, 0, len(writers))
+	for _, w := range writers {
+		if w != nil {
+			validWriters = append(validWriters, w)
+		}
+	}
+
+	if len(validWriters) == 0 {
+		return NewLogger(os.Stdout, "[ease] ", log.LstdFlags)
+	}
+
+	return NewLogger(io.MultiWriter(validWriters...), "[ease] ", log.LstdFlags)
+}
+
 // InitLogger 初始化全局日志实例（方便用户自定义）
 func InitLogger(out io.Writer, prefix string, flags int, level string) {
-	Logger = NewLogger(out, prefix, flags, level)
+	Logger = NewLoggerWithLevel(out, prefix, flags, level)
 }
 
 func (l *EaseLogger) SetPrefix(prefix string) {
@@ -201,7 +229,7 @@ func (l *EaseLogger) Debug(v ...any) {
 }
 
 // 全局日志实例，默认输出到标准输出，前缀 [ease]，包含标准日志标志
-var Logger *EaseLogger = NewLogger(os.Stdout, "[ease] ", log.LstdFlags, "INFO")
+var Logger *EaseLogger = NewLogger(os.Stdout, "[ease] ", log.LstdFlags)
 
 // 全局日志方法
 // ========== INFO 级别日志 ==========

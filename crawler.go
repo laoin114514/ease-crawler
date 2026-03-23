@@ -85,7 +85,7 @@ func GetAs[T any](c *Context, key string) (T, bool) {
 func GetCrawlerLogger(c *Context) *logger.EaseLogger {
 	loggerInstance, ok := GetAs[*logger.EaseLogger](c, ContextLoggerKey)
 	if !ok {
-		return logger.NewLogger(os.Stdout, LoggerPrefix, log.LstdFlags, "INFO")
+		return logger.NewLogger(os.Stdout, LoggerPrefix, log.LstdFlags)
 	}
 	return loggerInstance
 }

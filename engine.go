@@ -77,7 +77,7 @@ func New() *Engine {
 		},
 		mu:           sync.RWMutex{},
 		ctx:          new(Context),
-		engineLogger: logger.NewLogger(os.Stdout, "", log.LstdFlags, "INFO"),
+		engineLogger: logger.NewLogger(os.Stdout, "", log.LstdFlags),
 		logRootDir:   "logs",
 		crawlers:     make(map[string]*registeredCrawler),
 		logFiles:     make(map[string]*os.File),
@@ -256,7 +256,7 @@ func (g *CrawlerGroup) Register(crawler Crawler) {
 		return
 	}
 
-	logger := logger.NewLogger(f, "", log.LstdFlags, "INFO")
+	logger := logger.NewLogger(f, "", log.LstdFlags)
 	g.engine.crawlers[key] = &registeredCrawler{
 		path:    groupPath,
 		name:    name,
